@@ -1,12 +1,12 @@
-package com.simonolofsson
+package com.simonolofsson.pipeline
 
 import com.simonolofsson.util.PathUtil
 import io.delta.tables.DeltaTable
-import org.apache.spark.sql.functions.{col, regexp_replace}
+import org.apache.spark.sql.functions.{col, regexp_replace, expr}
 import org.apache.spark.sql.streaming.DataStreamWriter
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
-package object pipeline {
+object implicits {
 
   /**
    * Adds a set of utility methods to a Spark data frame.
@@ -33,7 +33,7 @@ package object pipeline {
         ).cast("date")
       )
 
-    def mergeIntoSilver(dataLakeRootPath: String, tableName: String, keyColumns: Seq[String], maybeWhenMatchedCondition: Option[String] = None): Unit = {
+    def mergeIntoSilver(dataLakeRootPath: String, tableName: String, keyColumns: Seq[String], maybeWhenMatchedCondition: Option[String] = None, doNotUpdateColumns: Set[String] = Set.empty): Unit = {
       val silverTablePath = s"${PathUtil.silverPath(dataLakeRootPath)}/$tableName"
       if (DeltaTable.isDeltaTable(silverTablePath)) {
         val existingTable = DeltaTable.forPath(silverTablePath)
@@ -47,8 +47,15 @@ package object pipeline {
           case None => deltaMergeBuilder.whenMatched()
         }
 
+        // Remove the set of columns to not update from all columns
+        val columnsToUpdate = df.schema.map(_.name).filter(column => !doNotUpdateColumns.contains(column))
+        // The merge API expects mappings of the columns in the delta table to expressions when updating rows.
+        // Since we only want to set the existing values to the values of the incoming rows, we
+        // simply create pairs of the same column but with different aliases.
+        val columnMappings = columnsToUpdate.map(column => s"existing.$column" -> s"incoming.$column").toMap
+
         deltaMergeMatchedActionBuilder
-          .updateAll()
+          .updateExpr(columnMappings)
           .execute()
 
       } else {
@@ -115,13 +122,25 @@ package object pipeline {
    * @param dataStreamWriter The DataStreamWriter to be extended with utility methods
    */
   implicit class ExtendedDataStreamWriter(val dataStreamWriter: DataStreamWriter[Row]) {
-    def mergeIntoSilver(dataLakeRootPath: String, tableName: String, keyColumns: String*): DataStreamWriter[Row] = {
+    def mergeIntoSilver(dataLakeRootPath: String, tableName: String, keyColumns: Seq[String], doNotUpdateColumns: Set[String] = Set.empty): DataStreamWriter[Row] =
+      checkpointedSilverStream(dataLakeRootPath, tableName)
+        .foreachBatch {
+          (newRows: DataFrame, _: Long) =>
+            newRows.mergeIntoSilver(dataLakeRootPath, tableName, keyColumns, doNotUpdateColumns = doNotUpdateColumns)
+        }
+
+    def mergeIntoSilverWithSyntheticId(dataLakeRootPath: String, tableName: String, keyColumns: Seq[String], doNotUpdateColumns: Set[String] = Set.empty): DataStreamWriter[Row] =
+      checkpointedSilverStream(dataLakeRootPath, tableName)
+        .foreachBatch {
+          (newRows: DataFrame, _: Long) =>
+            newRows
+              .withColumn("id", expr("uuid()"))
+              .mergeIntoSilver(dataLakeRootPath, tableName, keyColumns, doNotUpdateColumns = doNotUpdateColumns ++ Set("id"))
+        }
+
+    private def checkpointedSilverStream(dataLakeRootPath: String, tableName: String): DataStreamWriter[Row] =
       dataStreamWriter
         .format("delta")
         .option("checkpointLocation", s"${PathUtil.silverPath(dataLakeRootPath)}/${tableName}_checkpoint")
-        .foreachBatch((newRows: DataFrame, batchId: Long) => {
-          newRows.mergeIntoSilver(dataLakeRootPath, tableName, keyColumns)
-        })
-    }
   }
 }

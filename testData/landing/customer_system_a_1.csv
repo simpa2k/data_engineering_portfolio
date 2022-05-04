@@ -1,0 +1,3 @@
+customer_number,ssn,name
+123456-789,sensitive_value_1,name_a
+234567-890,sensitive_value_2,name_b

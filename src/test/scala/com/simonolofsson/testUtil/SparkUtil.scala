@@ -9,6 +9,7 @@ object SparkUtil {
     SparkSession
       .builder()
       .master("local")
+      .config("spark.default.parallelism", "1") // To speed up tests and simplify test assertions on id columns
       .getOrCreate()
 
   def createDataFrame(rows: Seq[Row], schema: StructType): DataFrame =
@@ -17,9 +18,9 @@ object SparkUtil {
       schema
     )
 
-  def assertDataFramesEqual(actual: DataFrame, expected: DataFrame): Unit = {
-    val collectedActual = collectAndSort(actual)
-    val collectedExpected = collectAndSort(expected)
+  def assertDataFramesEqual(actual: DataFrame, expected: DataFrame, ignoreColumns: Set[String] = Set.empty): Unit = {
+    val collectedActual = collectAndSort(actual, ignoreColumns)
+    val collectedExpected = collectAndSort(expected, ignoreColumns)
 
     assert(collectedActual == collectedExpected)
   }
@@ -34,5 +35,17 @@ object SparkUtil {
       .format("delta")
       .save(s"${PathUtil.bronzePath}/$tableName")
 
-  private def collectAndSort(df: DataFrame): Seq[Row] = df.collect().toSeq.sortBy(_.toSeq.mkString(""))
+  private def collectAndSort(df: DataFrame, columnsToIgnore: Set[String]): Seq[Row] = {
+    val columnsToCollect = df
+      .schema
+      .map(_.name)
+      .filter(column => !columnsToIgnore.contains(column))
+      .map(column => df(column))
+
+    df
+      .select(columnsToCollect:_*)
+      .collect()
+      .toSeq
+      .sortBy(_.toSeq.mkString(""))
+  }
 }

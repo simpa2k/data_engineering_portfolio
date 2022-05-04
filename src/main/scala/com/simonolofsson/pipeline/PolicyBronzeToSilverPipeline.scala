@@ -3,6 +3,7 @@ package com.simonolofsson.pipeline
 import org.apache.spark.sql.functions.{lit, regexp_replace}
 import org.apache.spark.sql.streaming.{StreamingQuery, Trigger}
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import com.simonolofsson.pipeline.implicits._
 
 class PolicyBronzeToSilverPipeline {
 
@@ -25,7 +26,7 @@ class PolicyBronzeToSilverPipeline {
       .writeStream
       .outputMode("append")
       .trigger(Trigger.Once())
-      .mergeIntoSilver(dataLakeRootPath, "policy", "customer_number", "product")
+      .mergeIntoSilver(dataLakeRootPath, "policy", Seq("customer_number", "product"))
       .start()
   }
 

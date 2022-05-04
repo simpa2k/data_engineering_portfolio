@@ -3,6 +3,7 @@ package com.simonolofsson.pipeline
 import com.simonolofsson.pipeline.TimeseriesExamplePipeline.TimeseriesExampleTable
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{arrays_zip, explode}
+import com.simonolofsson.pipeline.implicits._
 
 class TimeseriesExamplePipeline {
 
