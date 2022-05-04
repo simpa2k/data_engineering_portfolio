@@ -1,5 +1,7 @@
-package pipeline
+package com.simonolofsson.pipeline
+import com.simonolofsson.util.PathUtil
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions.expr
 
 class LandingToBronzePipeline {
 
@@ -8,8 +10,9 @@ class LandingToBronzePipeline {
     "json" -> readJson _
   )
 
-  def apply(spark: SparkSession, dataLakeRootPath: String, filename: String, metadata: Map[String, String]): Unit = {
+  def apply(spark: SparkSession, dataLakeRootPath: String, filename: String, metadata: Map[String, String] = Map.empty): Unit = {
     val (filenameWithoutExtension, extension) = splitFilenameAndExtension(filename)
+    val targetTable = metadata.getOrElse("target_table", filenameWithoutExtension) // TODO: Constant for target_table
     readMethodsByFileExtension
       .get(extension)
       .map(readFunction => readFunction(spark, s"${PathUtil.landingPath(dataLakeRootPath)}/$filename", metadata))
@@ -18,9 +21,11 @@ class LandingToBronzePipeline {
           s"Unsupported file format detected. The extension of the file passed was $extension but the supported ones are ${readMethodsByFileExtension.keys.mkString(",")}"
         )
       )
+//      .withColumn("meta_pipeline_run_id", expr("uuid()")) TODO: This needs to be the same literal for all rows
       .write
       .format("delta")
-      .save(s"${PathUtil.bronzePath(dataLakeRootPath)}/$filenameWithoutExtension")
+      .mode("append")
+      .save(s"${PathUtil.bronzePath(dataLakeRootPath)}/$targetTable")
   }
 
   private def splitFilenameAndExtension(filename: String): (String, String) = {

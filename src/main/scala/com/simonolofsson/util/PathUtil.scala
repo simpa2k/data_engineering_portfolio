@@ -1,4 +1,4 @@
-package pipeline
+package com.simonolofsson.util
 
 object PathUtil {
   def silverPath(dataLakeRootPath: String): String = s"$dataLakeRootPath/silver"

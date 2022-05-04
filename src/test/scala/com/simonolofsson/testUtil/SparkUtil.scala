@@ -1,3 +1,5 @@
+package com.simonolofsson.testUtil
+
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
@@ -16,8 +18,8 @@ object SparkUtil {
     )
 
   def assertDataFramesEqual(actual: DataFrame, expected: DataFrame): Unit = {
-    val collectedActual = actual.collect().toSeq
-    val collectedExpected = expected.collect().toSeq
+    val collectedActual = collectAndSort(actual)
+    val collectedExpected = collectAndSort(expected)
 
     assert(collectedActual == collectedExpected)
   }
@@ -31,4 +33,6 @@ object SparkUtil {
       .write
       .format("delta")
       .save(s"${PathUtil.bronzePath}/$tableName")
+
+  private def collectAndSort(df: DataFrame): Seq[Row] = df.collect().toSeq.sortBy(_.toSeq.mkString(""))
 }

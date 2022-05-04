@@ -1,8 +1,10 @@
-import org.apache.spark.sql.types.{ArrayType, DateType, DoubleType, StringType, StructField, StructType}
+package com.simonolofsson.pipeline
+
+import com.simonolofsson.testUtil.{SparkUtil, PathUtil}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row}
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.freespec.AnyFreeSpec
-import pipeline.TimeseriesExamplePipeline
 
 class TimeseriesExamplePipelineTest extends AnyFreeSpec with BeforeAndAfterEach {
 

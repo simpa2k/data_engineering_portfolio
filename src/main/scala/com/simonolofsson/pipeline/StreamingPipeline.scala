@@ -1,4 +1,4 @@
-package pipeline
+package com.simonolofsson.pipeline
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.expressions.Window

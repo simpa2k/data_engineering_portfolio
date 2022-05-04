@@ -1,3 +1,5 @@
+package com.simonolofsson.testUtil
+
 import java.io.File
 import java.nio.file.Paths
 import scala.reflect.io.Directory
