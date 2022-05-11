@@ -1,10 +1,12 @@
 package com.simonolofsson.pipeline
 
-import com.simonolofsson.util.PathUtil
+import com.simonolofsson.util.{PathUtil, SilverTable}
 import io.delta.tables.DeltaTable
-import org.apache.spark.sql.functions.{col, regexp_replace, expr}
+import org.apache.spark.sql.functions.{col, expr, regexp_replace}
 import org.apache.spark.sql.streaming.DataStreamWriter
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+
+import java.util.UUID
 
 object implicits {
 
@@ -33,8 +35,8 @@ object implicits {
         ).cast("date")
       )
 
-    def mergeIntoSilver(dataLakeRootPath: String, tableName: String, keyColumns: Seq[String], maybeWhenMatchedCondition: Option[String] = None, doNotUpdateColumns: Set[String] = Set.empty): Unit = {
-      val silverTablePath = s"${PathUtil.silverPath(dataLakeRootPath)}/$tableName"
+    def mergeIntoSilver(silverTable: SilverTable, keyColumns: Seq[String], maybeWhenMatchedCondition: Option[String] = None, doNotUpdateColumns: Set[String] = Set.empty): Unit = {
+      val silverTablePath = silverTable.path
       if (DeltaTable.isDeltaTable(silverTablePath)) {
         val existingTable = DeltaTable.forPath(silverTablePath)
         val deltaMergeBuilder = existingTable
@@ -59,16 +61,16 @@ object implicits {
           .execute()
 
       } else {
-        df.writeSilver(dataLakeRootPath, tableName)
+        df.writeSilver(silverTable)
       }
     }
 
-    def writeSilver(dataLakeRootPath: String, tableName: String): Unit =
+    def writeSilver(silverTable: SilverTable): Unit =
       df
         .write
         .format("delta")
         .mode("append")
-        .save(s"${PathUtil.silverPath(dataLakeRootPath)}/$tableName")
+        .save(silverTable.path)
   }
 
   /**
@@ -86,25 +88,17 @@ object implicits {
    * @param spark The SparkSession to be extended with utility methods
    */
   implicit class ExtendedSparkSession(val spark: SparkSession) {
-    def readBronzeStreamIfExists(dataLakeRootPath: String, tableName: String): Option[DataFrame] = {
-      val bronzeTablePath = s"${PathUtil.bronzePath(dataLakeRootPath)}/$tableName"
-      if (DeltaTable.isDeltaTable(bronzeTablePath)) {
-        Some(readBronzeStream(dataLakeRootPath, tableName))
-      } else
-        None
-    }
-
     def readBronze(dataLakeRootPath: String, tableName: String): DataFrame =
       spark
         .read
         .format("delta")
         .load(s"${PathUtil.bronzePath(dataLakeRootPath)}/$tableName")
 
-    def readBronzeStream(dataLakeRootPath: String, tableName: String): DataFrame =
+    def readBronzeStream(dataLakeRootPath: String, company: String, source: String, tableName: String): DataFrame =
       spark
         .readStream
         .format("delta")
-        .load(s"${PathUtil.bronzePath(dataLakeRootPath)}/$tableName")
+        .load(s"${PathUtil.bronzePath(dataLakeRootPath)}/$company/$source/$tableName")
   }
 
   /**
@@ -122,25 +116,25 @@ object implicits {
    * @param dataStreamWriter The DataStreamWriter to be extended with utility methods
    */
   implicit class ExtendedDataStreamWriter(val dataStreamWriter: DataStreamWriter[Row]) {
-    def mergeIntoSilver(dataLakeRootPath: String, tableName: String, keyColumns: Seq[String], doNotUpdateColumns: Set[String] = Set.empty): DataStreamWriter[Row] =
-      checkpointedSilverStream(dataLakeRootPath, tableName)
+    def mergeIntoSilver(silverTable: SilverTable, pipelineName: String, keyColumns: Seq[String], doNotUpdateColumns: Set[String] = Set.empty): DataStreamWriter[Row] =
+      checkpointedSilverStream(silverTable, pipelineName)
         .foreachBatch {
           (newRows: DataFrame, _: Long) =>
-            newRows.mergeIntoSilver(dataLakeRootPath, tableName, keyColumns, doNotUpdateColumns = doNotUpdateColumns)
+            newRows.mergeIntoSilver(silverTable, keyColumns, doNotUpdateColumns = doNotUpdateColumns)
         }
 
-    def mergeIntoSilverWithSyntheticId(dataLakeRootPath: String, tableName: String, keyColumns: Seq[String], doNotUpdateColumns: Set[String] = Set.empty): DataStreamWriter[Row] =
-      checkpointedSilverStream(dataLakeRootPath, tableName)
+    def mergeIntoSilverWithSurrogateKey(silverTable: SilverTable, pipelineName: String, keyColumns: Seq[String], doNotUpdateColumns: Set[String] = Set.empty): DataStreamWriter[Row] =
+      checkpointedSilverStream(silverTable, pipelineName)
         .foreachBatch {
           (newRows: DataFrame, _: Long) =>
             newRows
-              .withColumn("id", expr("uuid()"))
-              .mergeIntoSilver(dataLakeRootPath, tableName, keyColumns, doNotUpdateColumns = doNotUpdateColumns ++ Set("id"))
+              .withColumn("id", expr("uuid()")) // TODO: This doesn't need to be here any longer, was only required with monotonically_increasing_id
+              .mergeIntoSilver(silverTable, keyColumns, doNotUpdateColumns = doNotUpdateColumns ++ Set("id"))
         }
 
-    private def checkpointedSilverStream(dataLakeRootPath: String, tableName: String): DataStreamWriter[Row] =
+    private def checkpointedSilverStream(silverTable: SilverTable, pipelineName: String): DataStreamWriter[Row] =
       dataStreamWriter
         .format("delta")
-        .option("checkpointLocation", s"${PathUtil.silverPath(dataLakeRootPath)}/${tableName}_checkpoint")
+        .option("checkpointLocation", silverTable.checkpointLocation(pipelineName))
   }
 }

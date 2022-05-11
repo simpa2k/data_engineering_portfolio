@@ -10,9 +10,9 @@ import org.scalatest.freespec.AnyFreeSpec
 class CustomerPipelineTest extends AnyFreeSpec with BeforeAndAfterEach {
 
   "A customer pipeline" - {
-    "should add a synthetic key and perform upsert when writing from landing to bronze to silver" in {
+    "should add a surrogate key and perform upsert when writing from landing to bronze to silver" in {
       val landingToBronzePipeline = new LandingToBronzePipeline
-      landingToBronzePipeline(SparkUtil.spark, PathUtil.dataLakeRootPath, "customer_system_a_1.csv", Map("target_table" -> "customer_system_a"))
+      landingToBronzePipeline(SparkUtil.spark, PathUtil.dataLakeRootPath, "company_a/source_system_a/customer", "customer_system_a_1.csv", Map("target_table" -> "customer"))
 
       val customerBronzeToSilverPipeline = new CustomerSystemAPipeline
       customerBronzeToSilverPipeline(SparkUtil.spark, PathUtil.dataLakeRootPath).processAllAvailable()
@@ -29,23 +29,23 @@ class CustomerPipelineTest extends AnyFreeSpec with BeforeAndAfterEach {
       ))
       val expectedDataFrameA = SparkUtil.createDataFrame(
         Seq(
-          Row("123456-789", "sensitive_value_1", "name_a", "system_a", "company_a", "dummy_value"),
-          Row("234567-890", "sensitive_value_2", "name_b", "system_a", "company_a", "dummy_value"),
+          Row("123456-789", "sensitive_value_1", "name_a", "company_a", "source_system_a", "dummy_value"),
+          Row("234567-890", "sensitive_value_2", "name_b", "company_a", "source_system_a", "dummy_value"),
         ),
         expectedSchema
       )
 
       SparkUtil.assertDataFramesEqual(actualDataFrameA, expectedDataFrameA, ignoreColumns = Set("id"))
 
-      landingToBronzePipeline(SparkUtil.spark, PathUtil.dataLakeRootPath, "customer_system_a_2.csv", Map("target_table" -> "customer_system_a"))
+      landingToBronzePipeline(SparkUtil.spark, PathUtil.dataLakeRootPath, "company_a/source_system_a/customer", "customer_system_a_2.csv", Map("target_table" -> "customer"))
       customerBronzeToSilverPipeline(SparkUtil.spark, PathUtil.dataLakeRootPath).processAllAvailable()
 
       val actualDataFrameB = SparkUtil.readSilverTable("customer")
       val expectedDataFrameB = SparkUtil.createDataFrame(
         Seq(
-          Row("345678-901", "sensitive_value_3", "name_c", "system_a", "company_a", "dummy_value"),
-          Row("123456-789", "sensitive_value_1", "name_d", "system_a", "company_a", "dummy_value"),
-          Row("234567-890", "sensitive_value_2", "name_b", "system_a", "company_a", "dummy_value"),
+          Row("345678-901", "sensitive_value_3", "name_c", "company_a", "source_system_a", "dummy_value"),
+          Row("123456-789", "sensitive_value_1", "name_d", "company_a", "source_system_a", "dummy_value"),
+          Row("234567-890", "sensitive_value_2", "name_b", "company_a", "source_system_a", "dummy_value"),
         ),
         expectedSchema
       )
